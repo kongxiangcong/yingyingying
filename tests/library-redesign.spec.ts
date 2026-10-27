@@ -1,0 +1,42 @@
+import {test,expect,type Page} from '@playwright/test';
+import path from 'node:path';
+import fs from 'node:fs';
+import {execFileSync} from 'node:child_process';
+import {generateMediaFixture} from './mediaFixture';
+const dir=path.resolve('.test-fixtures/redesign');
+const evidence=path.resolve('.scratch/library-redesign/screenshots');
+const subtitle='1\n00:00:02,200 --> 00:00:02,800\nThe story is interesting.\n';
+async function menu(page:Page){if(!await page.locator('.study-menu').evaluate((el:HTMLDetailsElement)=>el.open))await page.getByLabel('学习菜单',{exact:true}).click()}
+async function mode(page:Page,name:string){await menu(page);if(!await page.locator('.mode-disclosure').evaluate((el:HTMLDetailsElement)=>el.open))await page.locator('.mode-disclosure>summary').click();await page.getByRole('button',{name,exact:true}).click()}
+test.beforeAll(()=>{generateMediaFixture(dir,subtitle);fs.mkdirSync(evidence,{recursive:true});let root=process.cwd();while(!fs.existsSync(path.join(root,'.local-tools'))&&path.dirname(root)!==root)root=path.dirname(root);execFileSync(path.join(root,'.local-tools/bin/ffmpeg.exe'),['-y','-i',path.join(dir,'tones.mp4'),'-i',path.join(dir,'english.srt'),'-map','0','-map','1','-c','copy','-c:s','mov_text','-metadata:s:s:0','language=eng',path.join(dir,'embedded.mp4')],{stdio:'ignore'})});
+test('library, upload recovery, programs, details, immersive modes and reports',async({page})=>{
+ test.setTimeout(90000);
+ await page.setViewportSize({width:1440,height:900});await page.goto('/');
+ await expect(page.getByLabel('主导航')).toBeVisible();await expect(page.getByLabel('视频文件')).toHaveCount(0);
+ const upload=page.getByRole('button',{name:'＋ 上传素材'});await upload.click();await expect(page.getByRole('dialog')).toBeVisible();await page.keyboard.press('Escape');await expect(upload).toBeFocused();
+ await upload.click();await page.getByLabel('视频文件',{exact:true}).setInputFiles(path.join(dir,'tones.mp4'));await page.getByRole('button',{name:'导入素材',exact:true}).click();await expect(page.getByRole('alert')).toContainText('未找到内嵌英文');
+ expect(await page.getByLabel('视频文件',{exact:true}).evaluate((el:HTMLInputElement)=>el.files?.[0]?.name)).toBe('tones.mp4');
+ await page.getByLabel('英文字幕',{exact:true}).setInputFiles(path.join(dir,'english.srt'));await page.getByRole('button',{name:'导入素材',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
+ const card=page.getByRole('button',{name:'查看详情 tones.mp4'}).first();await expect(card).toBeVisible();await card.click();await expect(page.getByRole('dialog',{name:'视频详情'})).toBeVisible();await page.getByLabel('所属节目',{exact:true}).selectOption('peppa');await expect(page.getByLabel('所属节目',{exact:true})).toBeEnabled();await page.getByLabel('关闭窗口').click();await page.reload();await page.getByRole('button',{name:/小猪佩奇.*个视频/}).click();await expect(card).toBeVisible();
+ await page.getByLabel('搜索视频').fill('不存在的长标题');await expect(page.getByText('没有找到匹配的视频')).toBeVisible();await page.getByLabel('搜索视频').fill('');
+ await page.screenshot({path:path.join(evidence,'library-wide.png'),fullPage:true});
+ for(const width of [390,320]){await page.setViewportSize({width,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);await page.screenshot({path:path.join(evidence,`library-${width}.png`),fullPage:true})}
+ await page.setViewportSize({width:1440,height:900});await page.getByRole('button',{name:'＋ 新建节目'}).click();await page.getByRole('textbox',{name:'节目名称'}).fill('英语短片 '+Date.now());await page.getByRole('button',{name:'创建节目',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByText('这里的故事，等你开始')).toBeVisible();await page.getByRole('button',{name:/小猪佩奇.*个视频/}).click();
+ const materials=await (await page.request.get('/api/materials')).json();const material=materials.find((m:any)=>m.name==='tones.mp4');
+ const questions=[{id:'q1',source_ids:['1'],english:'The story is interesting.',chinese:'这个故事很有意思。',pause_ms:1500,start_ms:2200,end_ms:2800,hint_indices:[0],card:{usage:'评价故事',pattern:'The story is…',explanation:'描述剧情',example:'The story is funny.',translation:'这个故事很有趣。'}}];
+ const prepared=await page.request.post(`/api/materials/${material.id}/packages`,{multipart:{package:{name:'fixed.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({questions}))}}});expect(prepared.ok()).toBeTruthy();
+ await card.click();await page.screenshot({path:path.join(evidence,'details.png')});await page.getByRole('button',{name:'开始学习',exact:true}).click();await expect(page.getByLabel('播放器已就绪')).toBeVisible();await expect(page.locator('video')).toHaveAttribute('controlslist','nofullscreen');await expect(page.getByText('导入练习包',{exact:true})).toHaveCount(0);await expect(page.getByLabel('蒙版浓度',{exact:true})).not.toBeVisible();
+ await mode(page,'填空');await expect(page.getByRole('heading',{name:questions[0].chinese})).toBeVisible();const first=page.getByRole('textbox',{name:'单词 1',exact:true});await first.fill('Th');
+ await mode(page,'看剧情');await expect(first).not.toBeVisible();expect(await page.locator('video').evaluate((v:HTMLVideoElement)=>v.paused)).toBe(true);await mode(page,'填空');await expect(first).toHaveValue('Th');
+ await menu(page);await page.locator('.study-settings>summary').click();await page.getByLabel('蒙版浓度',{exact:true}).fill('65');await expect(page.locator('.scene-wash')).toHaveCSS('background-color','rgba(248, 249, 244, 0.65)');await page.screenshot({path:path.join(evidence,'learning-settings.png')});await page.getByLabel('学习菜单',{exact:true}).click();
+ await menu(page);await page.getByRole('button',{name:'进入全屏',exact:true}).click();await page.mouse.move(800,600);await expect.poll(()=>page.evaluate(()=>!!document.fullscreenElement)).toBe(true);await expect(page.locator('.study-statusbar')).not.toBeVisible();await expect(page.getByLabel('蒙版浓度',{exact:true})).not.toBeVisible();await expect(first).toHaveValue('Th');await page.screenshot({path:path.join(evidence,'learning-fullscreen.png')});await page.evaluate(()=>document.exitFullscreen());await expect(page.locator('.study-statusbar')).toBeVisible();
+ for(const [width,height] of [[1440,900],[1024,768],[390,844],[320,740],[844,390]]){await page.setViewportSize({width,height});await expect(first).toBeInViewport();await expect(page.getByRole('button',{name:'直接揭晓',exact:true})).toBeInViewport();expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);expect(await page.evaluate(()=>document.documentElement.scrollHeight)).toBeLessThanOrEqual(height);await page.screenshot({path:path.join(evidence,`learning-${width}.png`)})}
+ await page.setViewportSize({width:1440,height:900});await page.emulateMedia({reducedMotion:'reduce'});await first.focus();await first.dispatchEvent('keydown',{key:'Enter',isComposing:true});await expect(first).toBeFocused();
+ await page.getByRole('button',{name:'Tips',exact:true}).click();await page.getByRole('button',{name:'Tips Pro',exact:true}).click();await expect(page.getByTestId('candidate-word')).toHaveCount(3);
+ for(const [i,word] of ['story','is','interesting'].entries())await page.getByRole('textbox',{name:`单词 ${i+2}`,exact:true}).fill(word);await expect(page.locator('.exercise-mask')).toHaveCount(0);await expect.poll(()=>page.locator('video').evaluate((v:HTMLVideoElement)=>v.paused)).toBe(false);
+ await menu(page);await page.getByRole('button',{name:'总结本次学习'}).click();await expect(page.getByLabel('已保存的学习报告')).toBeVisible();await page.getByRole('link',{name:'错题本',exact:true}).click();await expect(page.getByRole('heading',{name:'错题本',exact:true})).toBeVisible();
+});
+test('embedded English subtitles and program validation use real media',async({request})=>{
+ const result=await request.post('/api/materials',{multipart:{video:{name:'Peppa embedded.mp4',mimeType:'video/mp4',buffer:fs.readFileSync(path.join(dir,'embedded.mp4'))}}});expect(result.status()).toBe(201);const material=await result.json();const cues=await (await request.get(`/api/materials/${material.id}/subtitles`)).json();expect(cues[0].text).toBe('The story is interesting.');
+ const all=await (await request.get('/api/materials')).json();expect(all.find((m:any)=>m.id===material.id).program_id).toBe('peppa');expect((await request.put(`/api/materials/${material.id}/program`,{data:{program_id:'missing'}})).status()).toBe(422);expect((await request.get(`/api/materials/${material.id}/poster`)).status()).toBe(200);
+});

@@ -1,0 +1,46 @@
+# Local tooling and downloaded test media
+.local-tools/
+test-materials/**/*.mp4
+test-materials/**/*.wav
+test-materials/**/*.jpg
+test-materials/**/*.srt
+test-materials/**/*.vtt
+test-materials/**/*.part
+__pycache__/
+node_modules/
+.venv/
+.data/
+.test-data/
+dist/
+test-results/
+playwright-report/
+.worktrees/
+.env
+.test-fixtures/
+# Downloaded learning library, metadata and local import receipts
+test-materials/peppa-pig-library/
+.scratch/peppa-*.json
+.scratch/peppa-*.log
+.scratch/peppa-*.txt
+.scratch/george-*.json
+test-materials/learning-candidates/
+test-materials/learning-ready/
+.scratch/peppa-library/*.json
+.scratch/peppa-library/*.log
+.scratch/peppa-library/*.txt
+.scratch/peppa-library/*.png
+.scratch/peppa-library/qa-data/
+
+# Local media, scratch outputs, and runtime logs
+/test-materials/
+/.scratch/**
+!/.scratch/*/
+!/.scratch/*/spec.md
+!/.scratch/*/tickets.md
+!/.scratch/*/issues/
+!/.scratch/*/issues/*.md
+/docs/evidence/*.png
+/docs/evidence/*.json
+*.log
+
+/docs/peppa-library*.md
